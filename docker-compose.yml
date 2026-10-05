@@ -1,0 +1,44 @@
+# Act 1 — FreshCart on ONE host with plain Docker Compose.
+#   docker compose up -d --build      ->  http://<ec2-public-ip>/
+# This is where the containers module ended: it works, until the host or the traffic says no.
+services:
+  web:
+    build: { context: ./web, args: { APP_VERSION: compose } }
+    ports: ["80:80"]
+    depends_on: [api]          # Compose honours this; Swarm will NOT
+    restart: unless-stopped
+
+  api:
+    build: { context: ./api, args: { APP_VERSION: compose } }
+    environment:
+      DB_HOST: db
+      DB_PASSWORD: ${DB_PASSWORD:-freshcart-dev}
+      CART_STORE: memory       # fine with ONE replica; wrong the moment we scale
+      REDIS_URL: redis://redis:6379
+      SALE_PERCENT: "0"
+      CHAOS_ENABLED: "true"
+    depends_on:
+      db: { condition: service_healthy }
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: freshcart
+      POSTGRES_USER: freshcart
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-freshcart-dev}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U freshcart -d freshcart"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  dbdata:

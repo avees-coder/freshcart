@@ -1,0 +1,43 @@
+# FreshCart storefront — rendered at container start by the official nginx image
+# (/etc/nginx/templates/*.template -> /etc/nginx/conf.d/*, via envsubst; only
+# variables that exist in the environment are substituted, so $host etc. survive).
+#
+# Why a resolver + variable instead of "proxy_pass http://api:3000":
+#   nginx resolves a literal upstream ONCE at startup and exits if it is missing.
+#   Under an orchestrator the API may start later, move, or be rescheduled, so we
+#   resolve at request time through the platform's DNS:
+#     Swarm / Compose : 127.0.0.11 (Docker embedded DNS), API_HOST=api
+#     Kubernetes      : cluster DNS from /etc/resolv.conf,  API_HOST must be the FQDN
+#                       (nginx's resolver ignores resolv.conf search domains)
+
+server {
+    listen 80;
+    server_name _;
+
+    resolver ${DNS_RESOLVER} valid=10s ipv6=off;
+    set $api_upstream http://${API_HOST}:${API_PORT};
+
+    # Lets the browser show WHICH web replica answered (Ops panel).
+    add_header X-Served-By $hostname always;
+
+    location /api/ {
+        proxy_pass $api_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Request-Id $request_id;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 10s;
+    }
+
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    location / {
+        root /usr/share/nginx/html;
+        try_files $uri /index.html;
+    }
+}

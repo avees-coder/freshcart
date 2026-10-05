@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: web }
+  template:
+    metadata:
+      labels: { app: web }
+    spec:
+      containers:
+        - name: web
+          image: freshcart-web             # rewritten by kustomization.yaml "images:"
+          env:
+            # nginx's resolver does not use resolv.conf search domains: give the FQDN.
+            - { name: API_HOST, value: api.freshcart.svc.cluster.local }
+            - { name: API_PORT, value: "3000" }
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet: { path: /healthz, port: 80 }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits:   { cpu: 200m, memory: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  type: NodePort
+  selector: { app: web }
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30080                      # http://<any-node-public-ip>:30080

@@ -1,0 +1,24 @@
+# Act 3 — FreshCart on Kubernetes.   kubectl apply -k deploy/k8s
+# Replace CHANGE-ME with your lowercase GitHub user/org once (or: kustomize edit set image ...).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: freshcart
+resources:
+  - 00-namespace.yaml
+  - 10-config.yaml
+  - 20-postgres.yaml
+  - 30-redis.yaml
+  - 40-api.yaml
+  - 50-web.yaml
+# 60-hpa.yaml is applied separately, later in the demo (see README).
+configMapGenerator:
+  - name: db-init
+    files:
+      - init.sql=db-init.sql
+images:
+  - name: freshcart-api
+    newName: ghcr.io/CHANGE-ME/freshcart-api
+    newTag: v1
+  - name: freshcart-web
+    newName: ghcr.io/CHANGE-ME/freshcart-web
+    newTag: v1

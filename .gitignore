@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.env
+deploy/swarm/db_password.txt
+*.log

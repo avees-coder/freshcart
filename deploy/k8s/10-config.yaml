@@ -1,0 +1,23 @@
+# Configuration lives OUTSIDE the image: change it here, roll it out, no rebuild.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: freshcart-config
+data:
+  DB_HOST: postgres
+  DB_NAME: freshcart
+  DB_USER: freshcart
+  CART_STORE: redis              # the lesson from the Swarm demo, now the default
+  REDIS_URL: redis://redis:6379
+  SALE_PERCENT: "0"
+  CHAOS_ENABLED: "true"          # classroom only
+---
+# A Secret is only base64-encoded, not encrypted, unless etcd encryption is enabled.
+# Real teams use AWS Secrets Manager / External Secrets / Sealed Secrets instead of committing this.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: change-me-before-class

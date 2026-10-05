@@ -1,0 +1,4 @@
+# Force LF line endings: these files run on Linux (bash scripts, nginx .envsh, YAML).
+# Without this, a Windows checkout can commit CRLF and break the scripts on EC2.
+* text=auto eol=lf
+*.png binary

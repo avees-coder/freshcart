@@ -1,0 +1,19 @@
+{
+  "name": "freshcart-api",
+  "version": "1.0.0",
+  "description": "FreshCart mock quick-commerce API (ZG527 orchestration demo)",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.2.1",
+    "pg": "^8.23.1",
+    "redis": "^6.3.0"
+  }
+}

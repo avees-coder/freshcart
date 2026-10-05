@@ -1,0 +1,24 @@
+# Exam question C3(c) made observable. NOT part of kustomization.yaml.
+# Eight pods that do nothing, each REQUESTING 250m CPU, all pinned to one worker.
+# The scheduler counts requests even though the pause container uses ~0 CPU,
+# so fewer than 2000m / 250m = 8 fit: the node already carries other requests.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cpu-reserve
+  namespace: default
+spec:
+  replicas: 8
+  selector:
+    matchLabels: { app: cpu-reserve }
+  template:
+    metadata:
+      labels: { app: cpu-reserve }
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: k8s-w1      # requires infra/set-hostname.sh k8s-w1 before join
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.10.2   # same pause image kubeadm v1.36 uses
+          resources:
+            requests: { cpu: 250m, memory: 16Mi }

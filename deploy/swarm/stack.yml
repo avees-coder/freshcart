@@ -1,0 +1,81 @@
+# Act 2 — FreshCart on a 3-node Docker Swarm (swarm-mgr, swarm-w1, swarm-w2).
+#
+#   export GHCR_OWNER=<github-user-lowercase> TAG=v1
+#   openssl rand -hex 16 > deploy/swarm/db_password.txt      # never committed (.gitignore)
+#   docker node update --label-add db=true swarm-mgr          # where the database may run
+#   docker stack deploy -c deploy/swarm/stack.yml freshcart
+#
+# Same Compose format as Act 1, plus a "deploy:" section per service: that section is
+# the whole difference between "containers on a host" and "services on a cluster".
+# Images come from a REGISTRY: a worker cannot run an image that was only built on the manager.
+
+services:
+  web:
+    image: ghcr.io/${GHCR_OWNER}/freshcart-web:${TAG:-v1}
+    ports:
+      - "80:80"                      # routing mesh: port 80 answers on EVERY node
+    environment:
+      API_HOST: api
+      API_PORT: "3000"
+    deploy:
+      replicas: 2
+      update_config: { parallelism: 1, delay: 5s, order: start-first }
+    networks: [frontend]
+
+  api:
+    image: ghcr.io/${GHCR_OWNER}/freshcart-api:${TAG:-v1}
+    environment:
+      DB_HOST: db
+      DB_PASSWORD_FILE: /run/secrets/db_password
+      CART_STORE: memory             # DELIBERATELY WRONG for 3 replicas — fixed live in the demo
+      REDIS_URL: redis://redis:6379
+      SALE_PERCENT: "0"
+      CHAOS_ENABLED: "true"          # classroom only
+    secrets: [db_password]
+    deploy:
+      replicas: 3
+      update_config: { parallelism: 1, delay: 10s, failure_action: rollback, order: start-first }
+      restart_policy: { condition: any }
+      resources:
+        reservations: { cpus: "0.10", memory: 96M }
+        limits: { cpus: "0.50", memory: 256M }
+    networks: [frontend, backend]
+
+  redis:
+    image: redis:8-alpine            # cart data is disposable: no volume on purpose
+    deploy:
+      replicas: 1
+    networks: [backend]
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: freshcart
+      POSTGRES_USER: freshcart
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    configs:
+      - source: db_init
+        target: /docker-entrypoint-initdb.d/init.sql
+    volumes:
+      - dbdata:/var/lib/postgresql/data   # a LOCAL volume on whichever node runs db
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.labels.db == true]   # pinned: the data cannot follow it elsewhere
+    networks: [backend]
+
+networks:
+  frontend: { driver: overlay }
+  backend:  { driver: overlay, attachable: true }
+
+volumes:
+  dbdata:
+
+configs:
+  db_init:
+    file: ../../db/init.sql
+
+secrets:
+  db_password:
+    file: ./db_password.txt
