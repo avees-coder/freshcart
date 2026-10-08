@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# ZG527 account preflight, part 1 — run in AWS CloudShell (ap-south-1). Launches NOTHING.
+# ZG527 account preflight, part 1 — run in AWS CloudShell (or any shell with AWS CLI credentials). Launches NOTHING.
 # Uses --dry-run: AWS evaluates IAM policies and organisation SCPs, then stops.
 #   DryRunOperation      = you WOULD be allowed
 #   UnauthorizedOperation = blocked (by IAM or an SCP)
 # Usage:  SG_ID=sg-xxxxxxxx bash infra/preflight/aws-permissions-check.sh
+#         Tests the region your shell is in (CloudShell: the region in its tab); override with REGION=...
 #         (SG_ID optional: an existing security group to test rule edits on)
 set -uo pipefail
+# Region: explicit REGION=..., else the shell's own region (CloudShell sets AWS_REGION), else ap-south-1
+REGION="${REGION:-${AWS_REGION:-${AWS_DEFAULT_REGION:-$(aws configure get region 2>/dev/null)}}}"
 REGION="${REGION:-ap-south-1}"
 SG_ID="${SG_ID:-}"
 NEED_VCPU=12          # 5 x t3.small (2 vCPU) + 1 x t3.medium (2 vCPU)
@@ -19,7 +22,19 @@ dry() {   # dry <label> <aws command ...>
 }
 
 echo "== Who am I"
-aws sts get-caller-identity --output table || { echo "No credentials — run this in CloudShell"; exit 1; }
+if ! aws sts get-caller-identity --output table; then
+  echo
+  echo "Could not get AWS credentials, so no check could run (this is NOT yet a permission result)."
+  if [[ -n "${AWS_CONTAINER_CREDENTIALS_FULL_URI:-}" ]]; then
+    echo "You are in CloudShell, but its credential service failed. Usually the console session expired:"
+    echo "  1. Reload the browser tab, or CloudShell > Actions > Restart AWS CloudShell"
+    echo "  2. Still failing: sign out of the AWS console, sign in again, reopen CloudShell"
+    echo "  3. Still failing: run this script from your laptop with the AWS CLI (aws configure sso / aws configure)"
+  else
+    echo "Not in CloudShell and no CLI credentials: run 'aws configure' or 'aws configure sso' first."
+  fi
+  exit 1
+fi
 
 echo "== Region ${REGION}: network and image"
 VPC=$(aws ec2 describe-vpcs --region "$REGION" --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text 2>&1)
@@ -43,6 +58,17 @@ done
 echo "== Security group permissions"
 dry "CreateSecurityGroup" aws ec2 create-security-group --region "$REGION" --group-name zg527-preflight-dry --description "dry run" --vpc-id "$VPC"
 if [[ -n "$SG_ID" ]]; then
+  SG_VPC=$(aws ec2 describe-security-groups --region "$REGION" --group-ids "$SG_ID" --query 'SecurityGroups[0].VpcId' --output text 2>/dev/null)
+  if [[ "$SG_VPC" != vpc-* ]]; then
+    fail "Security group $SG_ID" "not found in ${REGION}. Security groups are per region: either create it in ${REGION}, or re-run with REGION=<the region it was created in>"
+    SG_ID=""
+  elif [[ "$SG_VPC" != "$VPC" ]]; then
+    fail "Security group $SG_ID" "is in $SG_VPC, but instances launch into the default VPC $VPC — create the group in the default VPC"
+  else
+    pass "Security group $SG_ID is in the default VPC $VPC"
+  fi
+fi
+if [[ -n "$SG_ID" ]]; then
   dry "AuthorizeSecurityGroupIngress (self-reference, all traffic) on $SG_ID" \
     aws ec2 authorize-security-group-ingress --region "$REGION" --group-id "$SG_ID" \
       --ip-permissions "IpProtocol=-1,UserIdGroupPairs=[{GroupId=${SG_ID}}]"
@@ -50,7 +76,7 @@ if [[ -n "$SG_ID" ]]; then
     aws ec2 authorize-security-group-ingress --region "$REGION" --group-id "$SG_ID" \
       --ip-permissions 'IpProtocol=tcp,FromPort=30080,ToPort=30080,IpRanges=[{CidrIp=0.0.0.0/0}]'
 else
-  echo "  SKIP  rule edits (set SG_ID=sg-... to test them)"
+  echo "  SKIP  rule edits (no usable SG_ID)"
 fi
 
 echo "== vCPU quota (Running On-Demand Standard instances, L-1216C47A)"
@@ -60,7 +86,7 @@ if [[ "$Q" =~ ^[0-9.]+$ ]]; then
     --query 'Reservations[].Instances[].CpuOptions.[CoreCount,ThreadsPerCore]' --output text 2>/dev/null | awk '{s+=$1*$2} END {print s+0}')
   FREE=$(awk -v q="$Q" -v u="$USED" 'BEGIN{print int(q-u)}')
   if (( FREE >= NEED_VCPU )); then pass "Quota ${Q%.*} vCPU, ${USED} in use, ${FREE} free (need ${NEED_VCPU})"
-  else fail "vCPU quota" "quota ${Q%.*}, in use ${USED}, free ${FREE}; the lab needs ${NEED_VCPU}. Request an increase or run the clusters one after the other."; fi
+  else fail "vCPU quota" "quota ${Q%.*}, in use ${USED}, free ${FREE}; the lab needs ${NEED_VCPU} (every t3 size has 2 vCPU, so even one 3-node cluster needs 6). Request an increase to 16 in ${REGION}: Service Quotas > Amazon EC2 > L-1216C47A."; fi
 else
   fail "Read vCPU quota" "$(head -c 200 <<<"$Q") — check Service Quotas in the console instead"
 fi
@@ -72,4 +98,4 @@ if [[ -z "$DENIES" ]]; then pass "No custom deny rules"; else fail "Custom NACL 
 
 echo
 if (( FAILS == 0 )); then echo "RESULT: all permission checks passed. Next: part 2 (node-check.sh on two test instances)."
-else echo "RESULT: ${FAILS} check(s) failed. Show the FAIL lines to whoever administers the BITS AWS organisation."; fi
+else echo "RESULT: ${FAILS} check(s) failed. Fix them, or show the FAIL lines to the account administrator."; fi

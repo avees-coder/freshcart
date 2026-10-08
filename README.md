@@ -65,8 +65,8 @@ API endpoints: `/api/healthz` (liveness), `/api/ready` (readiness — needs the 
    git tag v1
    git push origin v1
    ```
-3. On GitHub → your profile → **Packages**, open `freshcart-api` and `freshcart-web` and set visibility to
-   **Public** so the EC2 nodes can pull without credentials. (Private packages need `docker login ghcr.io`
+3. On GitHub → your profile → **Packages**, open `freshcart-api` and `freshcart-web` → Package settings →
+   Danger Zone → Change visibility → **Public** (web UI only: GitHub has no API or CLI command for this) so the EC2 nodes can pull without credentials. (Private packages need `docker login ghcr.io`
    on every Swarm node, or an `imagePullSecret` in Kubernetes.)
 4. Note your **lowercase** GitHub owner name — ghcr.io rejects uppercase. Below it is `<owner>`.
 
@@ -79,7 +79,7 @@ docker push ghcr.io/<owner>/freshcart-api:v1
 docker push ghcr.io/<owner>/freshcart-web:v1
 ```
 
-## AWS lab topology (ap-south-1, Ubuntu 24.04 LTS, 20 GiB gp3 root volume)
+## AWS lab topology (one region of your choice — ap-south-1 or us-east-1 — Ubuntu 24.04 LTS, 20 GiB gp3 root volume)
 
 | Cluster | Instance name | Type | Role |
 |---|---|---|---|

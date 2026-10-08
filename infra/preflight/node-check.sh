@@ -14,6 +14,11 @@ TCP_PORTS=(2377 7946 6443 10250 2379 2380)    # swarm mgmt, gossip, k8s API, kub
 UDP_PORTS=(4789 7946 8472)                     # swarm VXLAN, gossip, flannel VXLAN
 LOG=/tmp/zg527-preflight; mkdir -p "$LOG"
 
+imds() {   # read EC2 instance metadata (IMDSv2); prints nothing off-EC2
+  local t; t=$(curl -s -m 3 -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')
+  curl -s -m 3 -H "X-aws-ec2-metadata-token: $t" "http://169.254.169.254/latest/meta-data/$1"
+}
+
 egress() {
   # Each source must return the code a REAL endpoint returns. A filtering proxy usually
   # answers 403/407 instead — counting "any answer" as success would hide exactly that.
@@ -29,7 +34,9 @@ egress() {
     curl -s -m 20 "$1" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("token",""))' 2>/dev/null
   }
   echo "== Egress from $(hostname) ($(hostname -I | awk '{print $1}'))"
-  check "Ubuntu apt mirror"                200     "http://ap-south-1.ec2.archive.ubuntu.com/ubuntu/dists/noble/Release"
+  local REGION; REGION=$(imds placement/region); [[ "$REGION" =~ ^[a-z]+-[a-z]+-[0-9]+$ ]] || REGION=ap-south-1
+  echo "  INFO  region: ${REGION}"
+  check "Ubuntu apt mirror (${REGION})"    200     "http://${REGION}.ec2.archive.ubuntu.com/ubuntu/dists/noble/Release"
   check "GitHub (git clone)"               200     "https://github.com"
   check "Docker apt repo key"              200     "https://download.docker.com/linux/ubuntu/gpg"
   check "Kubernetes v1.36 apt repo key"    200     "https://pkgs.k8s.io/core:/stable:/v1.36/deb/Release.key"
@@ -91,7 +98,7 @@ web() {
     echo $! >>"$LOG/pids"
   done
   sleep 1
-  PUB=$(curl -s -m 3 -H "X-aws-ec2-metadata-token: $(curl -s -m 3 -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')" http://169.254.169.254/latest/meta-data/public-ipv4)
+  PUB=$(imds public-ipv4)
   [[ "$PUB" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || PUB="<public-ip>"
   echo "Open from your laptop:  http://${PUB}/   and   http://${PUB}:30080/"
   echo "(80 needs the Swarm SG rule, 30080 the Kubernetes SG rule — only one will answer per SG)"
