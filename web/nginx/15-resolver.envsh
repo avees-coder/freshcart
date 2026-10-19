@@ -1,0 +1,8 @@
+#!/bin/sh
+# Sourced by the nginx image entrypoint (*.envsh) BEFORE templates are rendered.
+# Picks the platform's DNS server so one image works on Compose, Swarm and Kubernetes.
+if [ -z "${DNS_RESOLVER:-}" ]; then
+  DNS_RESOLVER=$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf)
+  export DNS_RESOLVER
+fi
+echo "15-resolver.envsh: DNS_RESOLVER=${DNS_RESOLVER} API_HOST=${API_HOST}:${API_PORT}"
