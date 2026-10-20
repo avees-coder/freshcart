@@ -253,7 +253,7 @@ launch_all() {
     local ud; ud=$(mktemp); user_data "$name" >"$ud"
     id=$(aws ec2 run-instances --image-id "$AMI" --instance-type "$type" --key-name "$KEY_NAME" \
           --network-interfaces "DeviceIndex=0,SubnetId=${SUBNET},AssociatePublicIpAddress=true,Groups=${sg}" \
-          --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=20,VolumeType=gp3,Encrypted=true,DeleteOnTermination=true}' \
+          --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=20,VolumeType=gp3,DeleteOnTermination=true}' \
           --metadata-options HttpTokens=required,HttpEndpoint=enabled \
           --instance-initiated-shutdown-behavior stop \
           --user-data "file://${ud}" \
